@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Database migration and backend API key service + routes. Creates the api_keys table in Supabase with RLS, implements apiKeyService.ts (generateApiKey, validateApiKey using Node crypto SHA-256), adds apiKeys.ts route (POST/GET/DELETE /api/keys), and registers the route in index.ts.",
+  "status": "completed",
+  "steps": [
+    "Create supabase/migrations/001_api_keys.sql with: CREATE TABLE api_keys (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, key_hash TEXT NOT NULL UNIQUE, key_prefix VARCHAR(8) NOT NULL, name VARCHAR(100) NOT NULL DEFAULT 'My API Key', created_at TIMESTAMPTZ DEFAULT NOW(), last_used_at TIMESTAMPTZ); CREATE INDEX idx_api_keys_user_id ON api_keys(user_id); CREATE INDEX idx_api_keys_key_hash ON api_keys(key_hash); ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY; CREATE POLICY 'Users can manage their own API keys' ON api_keys FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id); Add a comment block at the top explaining how to apply this in Supabase SQL Editor.",
+    "Create apps/backend/src/services/apiKeyService.ts. Import { randomBytes, createHash } from 'crypto' and { supabase } from '../config/supabase'. Implement: generateApiKey(userId: string, name: string): Promise<{ key: string; record: ApiKeyRecord }> — generates 32-byte random key with prefix 'mtk_', SHA-256 hashes the full key, inserts into api_keys table with user_id, key_hash, key_prefix (first 8 chars of key after 'mtk_' prefix, i.e. 'mtk_' + first 4 hex chars), name. Returns the plaintext key ONCE (never stored) plus the DB record. Implement: validateApiKey(rawKey: string): Promise<{ userId: string } | null> — SHA-256 hashes the raw key, queries api_keys WHERE key_hash = hash LIMIT 1, if found updates last_used_at = NOW() and returns { userId: record.user_id }, else returns null. Export interface ApiKeyRecord { id: string; user_id: string; key_prefix: string; name: string; created_at: string; last_used_at: string | null }.",
+    "Create apps/backend/src/routes/apiKeys.ts. Import express, { AuthenticatedRequest, authenticateUser } from '../middleware/auth', and { generateApiKey, validateApiKey, ApiKeyRecord } from '../services/apiKeyService'. Register three routes on express.Router(): POST / — authenticateUser, reads req.body.name (default 'My API Key'), calls generateApiKey(req.user!.id, name), returns 201 with { key (plaintext, shown once), record }. GET / — authenticateUser, queries supabase api_keys WHERE user_id = req.user!.id ORDER BY created_at DESC, returns { keys: ApiKeyRecord[] } (no key_hash field in response). DELETE /:id — authenticateUser, deletes api_keys WHERE id = req.params.id AND user_id = req.user!.id, returns 204 or 404 if not found.",
+    "Modify apps/backend/src/index.ts: add import apiKeyRoutes from './routes/apiKeys'; add app.use('/api/keys', apiKeyRoutes); immediately after the existing app.use('/api/user', userRoutes) line."
+  ],
+  "acceptance_criteria": [
+    "supabase/migrations/001_api_keys.sql exists and is valid SQL that creates the api_keys table with all specified columns, indexes, RLS, and policy",
+    "apps/backend/src/services/apiKeyService.ts compiles with no TypeScript errors",
+    "apps/backend/src/routes/apiKeys.ts compiles with no TypeScript errors",
+    "POST /api/keys with a valid Supabase JWT returns a plaintext key starting with 'mtk_' and a record without key_hash",
+    "GET /api/keys with a valid Supabase JWT returns the list of existing keys without key_hash",
+    "DELETE /api/keys/:id with a valid JWT deletes the matching key and returns 204",
+    "npm run build --workspace=apps/backend exits 0 with no TypeScript errors"
+  ],
+  "verification": [
+    "Run: cd z:\\Work\\Kiro\\meeting-transcript-mcp && npm run build --workspace=apps/backend — expect exit 0, no errors",
+    "Manually apply supabase/migrations/001_api_keys.sql in the Supabase project SQL Editor (wlewrirolaleibutqbwj.supabase.co) and confirm the api_keys table appears",
+    "Start backend (npm run dev --workspace=apps/backend) and call POST http://localhost:3000/api/keys with Authorization: Bearer <supabase_jwt> and body {\"name\": \"Test Key\"} — expect 201 with a key field starting with 'mtk_'"
+  ],
+  "blocked_reason": null,
+  "findings": "FEAT-001 implemented and verified. Files created: supabase/migrations/001_api_keys.sql (api_keys table with RLS, indexes, policy), apps/backend/src/services/apiKeyService.ts (generateApiKey + validateApiKey with SHA-256 hashing), apps/backend/src/routes/apiKeys.ts (POST/GET/DELETE /api/keys). File modified: apps/backend/src/index.ts (imported apiKeyRoutes, registered app.use('/api/keys', apiKeyRoutes) after userRoutes). Build: npm run build --workspace=apps/backend exits 0, zero TypeScript errors."
+}
