@@ -17,12 +17,31 @@ export default function RecordScreen() {
   const [title, setTitle] = useState('');
   const [projectTags, setProjectTags] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
   const { session } = useAuth();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWeb = Platform.OS === 'web';
+
+  const cancelUpload = () => {
+    cancelledRef.current = true;
+    xhrRef.current?.abort();
+    abortControllerRef.current?.abort();
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadStage('');
+    setJobId(null);
+    Alert.alert('Cancelled', 'Upload cancelled.');
+  };
 
   const startRecording = async () => {
     if (isWeb) {
@@ -86,50 +105,153 @@ export default function RecordScreen() {
       return;
     }
 
+    cancelledRef.current = false;
     setUploading(true);
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL;
       const token = session?.access_token;
-
-      const formData = new FormData();
-      const fileName = blob ? 'recording.webm' : (uri.split('/').pop() || 'recording.m4a');
-
-      if (blob) {
-        formData.append('audio_file', blob, fileName);
-      } else {
-        formData.append('audio_file', {
-          uri,
-          type: 'audio/m4a',
-          name: fileName,
-        } as any);
-      }
-
-      formData.append('title', title);
-      formData.append(
-        'project_tags',
-        JSON.stringify(projectTags.split(',').map((t) => t.trim()).filter(Boolean))
+      const tags = JSON.stringify(
+        projectTags.split(',').map((t) => t.trim()).filter(Boolean)
       );
 
-      const response = await fetch(`${apiUrl}/api/transcripts/upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      if (blob) {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const formData = new FormData();
+        formData.append('audio_file', blob, 'recording.webm');
+        formData.append('title', title);
+        formData.append('project_tags', tags);
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
+        const response = await fetch(`${apiUrl}/api/transcripts/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Upload failed');
+
+        const data = await response.json();
+        const receivedJobId: string = data.jobId;
+        if (receivedJobId) {
+          setJobId(receivedJobId);
+          const interval = setInterval(async () => {
+            try {
+              const pollRes = await fetch(`${apiUrl}/api/transcripts/job/${receivedJobId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const pollData = await pollRes.json();
+              setUploadProgress(pollData.progress ?? 0);
+              setUploadStage(pollData.message ?? '');
+              if (pollData.status === 'completed') {
+                clearInterval(interval);
+                pollIntervalRef.current = null;
+                setUploading(false);
+                setJobId(null);
+                setUploadProgress(0);
+                setUploadStage('');
+                Alert.alert('Success', 'Transcript created successfully!');
+                setTitle('');
+                setProjectTags('');
+              } else if (pollData.status === 'failed') {
+                clearInterval(interval);
+                pollIntervalRef.current = null;
+                setUploading(false);
+                setJobId(null);
+                setUploadProgress(0);
+                setUploadStage('');
+                Alert.alert('Error', pollData.error || 'Transcription failed');
+              }
+            } catch (_e) { /* ignore poll blips */ }
+          }, 1500);
+          pollIntervalRef.current = interval;
+          return; // stay in uploading state; poll handler will dismiss
+        }
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          const formData = new FormData();
+          const fileName = uri.split('/').pop() || 'recording.m4a';
+          const ext = fileName.split('.').pop()?.toLowerCase();
+          const mimeMap: Record<string, string> = {
+            m4a: 'audio/m4a',
+            mp3: 'audio/mpeg',
+            wav: 'audio/wav',
+            mp4: 'audio/mp4',
+            webm: 'audio/webm',
+            ogg: 'audio/ogg',
+            aac: 'audio/aac',
+          };
+          const mimeType = (ext && mimeMap[ext]) || 'audio/m4a';
+          (formData as any).append('audio_file', { uri, type: mimeType, name: fileName });
+          formData.append('title', title);
+          formData.append('project_tags', tags);
+
+          const xhr = new XMLHttpRequest();
+          xhrRef.current = xhr;
+          xhr.open('POST', `${apiUrl}/api/transcripts/upload`);
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                if (data.jobId) {
+                  setJobId(data.jobId);
+                  const receivedJobId = data.jobId;
+                  const interval = setInterval(async () => {
+                    try {
+                      const pollRes = await fetch(`${apiUrl}/api/transcripts/job/${receivedJobId}`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      const pollData = await pollRes.json();
+                      setUploadProgress(pollData.progress ?? 0);
+                      setUploadStage(pollData.message ?? '');
+                      if (pollData.status === 'completed') {
+                        clearInterval(interval);
+                        pollIntervalRef.current = null;
+                        setUploading(false);
+                        setJobId(null);
+                        setUploadProgress(0);
+                        setUploadStage('');
+                        Alert.alert('Success', 'Transcript created successfully!');
+                        setTitle('');
+                        setProjectTags('');
+                      } else if (pollData.status === 'failed') {
+                        clearInterval(interval);
+                        pollIntervalRef.current = null;
+                        setUploading(false);
+                        setJobId(null);
+                        setUploadProgress(0);
+                        setUploadStage('');
+                        Alert.alert('Error', pollData.error || 'Transcription failed');
+                      }
+                    } catch (_e) { /* ignore poll blips */ }
+                  }, 1500);
+                  pollIntervalRef.current = interval;
+                }
+              } catch (_e) { /* JSON parse failed, continue */ }
+              resolve();
+            } else {
+              reject(new Error(`Upload failed: ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.onabort = () => reject(new Error('cancelled'));
+          xhr.send(formData);
+        });
       }
 
-      Alert.alert('Success', 'Transcript created successfully!');
-      setTitle('');
-      setProjectTags('');
-    } catch (error) {
+      if (cancelledRef.current) return;
+    } catch (error: any) {
+      if (cancelledRef.current || error?.name === 'AbortError' || error?.message === 'cancelled') return;
       console.error('Upload error:', error);
       Alert.alert('Error', 'Failed to upload audio');
     } finally {
-      setUploading(false);
+      xhrRef.current = null;
+      abortControllerRef.current = null;
+      // Only clear uploading here if we are NOT waiting for a job poll
+      // (poll completion handler clears it when status=completed/failed)
+      if (!pollIntervalRef.current) {
+        setUploading(false);
+      }
     }
   };
 
@@ -182,6 +304,19 @@ export default function RecordScreen() {
             {uploading ? 'Uploading...' : 'Upload Audio File'}
           </Text>
         </TouchableOpacity>
+
+        {uploading && (
+          <View style={styles.progressContainer}>
+            <Text style={styles.progressStage}>{uploadStage || 'Uploading...'}</Text>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${uploadProgress}%` as any }]} />
+            </View>
+            <Text style={styles.progressPercent}>{uploadProgress}%</Text>
+            <TouchableOpacity style={styles.cancelButton} onPress={cancelUpload}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -254,5 +389,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '600',
+  },
+  progressContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    width: '100%',
+  },
+  progressTrack: {
+    height: 8,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    width: '100%',
+    marginVertical: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 4,
+  },
+  progressStage: {
+    fontSize: 16,
+    color: '#1e293b',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  progressPercent: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  cancelButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#FF3B30',
+  },
+  cancelText: {
+    color: '#FF3B30',
+    fontWeight: '600',
+    fontSize: 15,
   },
 });
