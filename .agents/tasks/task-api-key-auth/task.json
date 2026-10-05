@@ -1,0 +1,7 @@
+{
+  "task_id": "task-api-key-auth",
+  "task_description": "Add API key authentication to the MCP server so end users configure it with only a Bearer token in the Authorization header. No Supabase credentials needed in user config. Covers: DB migration (api_keys table), backend service + routes, MCP server rewrite to HTTP+SSE with header-based auth, mobile profile screen key management UI, and updated docs.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}
