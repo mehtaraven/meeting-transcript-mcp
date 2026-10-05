@@ -1,0 +1,30 @@
+{
+  "name": "@meeting-transcript/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for exposing meeting transcripts to Claude AI",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "meeting-transcript-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=../../apps/backend/.env src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@meeting-transcript/shared": "*",
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@supabase/supabase-js": "^2.39.3",
+    "@types/express": "^4.17.25",
+    "dotenv": "^16.4.1",
+    "express": "^4.22.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
