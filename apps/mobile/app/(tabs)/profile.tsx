@@ -9,6 +9,7 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,7 @@ export default function ProfileScreen() {
       });
       if (!response.ok) throw new Error('Failed to fetch API keys');
       const data = await response.json();
-      setApiKeys(data);
+      setApiKeys(data.keys ?? []);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Could not load API keys');
     } finally {
@@ -162,10 +163,11 @@ export default function ProfileScreen() {
               multiline={false}
             />
             <View style={styles.keyBoxActions}>
-              <TouchableOpacity style={styles.copyButton} onPress={() => {
-                // TextInput with selectTextOnFocus lets users copy manually.
-                // Alert guides them to long-press the key above to select and copy.
-                Alert.alert('Copy Key', 'Long-press the key text above to select and copy it.');
+              <TouchableOpacity style={styles.copyButton} onPress={async () => {
+                if (newKey) {
+                  await Clipboard.setStringAsync(newKey);
+                  Alert.alert('Copied', 'API key copied to clipboard.');
+                }
               }}>
                 <Text style={styles.copyButtonText}>Copy</Text>
               </TouchableOpacity>
