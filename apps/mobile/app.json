@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Meeting Transcript",
+    "slug": "meeting-transcript-mcp",
+    "version": "1.0.0",
+    "scheme": "meetingtranscript",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.meetingtranscript.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access to record meetings.",
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.meetingtranscript.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
