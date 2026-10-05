@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Extend the mobile profile screen with MCP API Key management UI. Depends on FEAT-001 (backend /api/keys endpoint must exist). Adds a new section below the existing 'MCP Integration' section in apps/mobile/app/(tabs)/profile.tsx: a 'Generate Key' button, a one-time display of the new key with a copy-to-clipboard button, a list of existing keys showing name/prefix/created_at, and a Revoke button per key. Calls the backend REST API using the user's Supabase JWT from session.access_token.",
+  "status": "completed",
+  "steps": [
+    "Add a BACKEND_URL constant in apps/mobile/app/(tabs)/profile.tsx (or read from EXPO_PUBLIC_BACKEND_URL env var). Default to 'http://localhost:3000' for local dev. All fetch calls use session.access_token as the Bearer token.",
+    "Add state to apps/mobile/app/(tabs)/profile.tsx: apiKeys (array of { id, name, key_prefix, created_at, last_used_at }), newKey (string | null — the once-shown plaintext key), isLoadingKeys (boolean), isGenerating (boolean). Load keys on mount via useEffect calling GET /api/keys with Authorization header.",
+    "Replace the existing 'MCP Integration' section content in profile.tsx with a full MCP API Keys section. Keep the section title 'MCP Integration'. Contents: short description text explaining what the key is for. 'Generate New API Key' TouchableOpacity button that calls POST /api/keys, stores the returned key in newKey state, and refreshes the list. If newKey is set, show a highlighted box with the plaintext key, a copy button (using Clipboard from react-native or @react-native-clipboard/clipboard — check what's available; if neither, use TextInput with selectTextOnFocus and editable=false so user can copy), and a dismiss/done button that clears newKey. Below that, render the list of existing keys: each row shows name, key_prefix + '...', created_at formatted as a short date, and a 'Revoke' TouchableOpacity that calls DELETE /api/keys/:id then removes from local state. Show loading spinner (ActivityIndicator) while fetching or generating. Handle errors with Alert.alert.",
+    "Add new StyleSheet entries to profile.tsx for: keyBox (highlighted container for the new key display), keyText (monospace font for the key), copyButton, keyRow (row layout for each listed key), revokeButton, revokeText, keyMeta (smaller text for prefix and date). Use the existing color palette (#007AFF for primary, #FF3B30 for destructive/revoke)."
+  ],
+  "acceptance_criteria": [
+    "Profile screen loads and displays existing API keys from the backend on mount",
+    "Tapping 'Generate New API Key' calls POST /api/keys and shows the returned plaintext key in a highlighted box",
+    "The plaintext key is only shown once; tapping 'Done' / dismissing clears it from the UI",
+    "Each key row shows the name, prefix, and creation date",
+    "Tapping 'Revoke' on a key calls DELETE /api/keys/:id and removes the key from the list",
+    "The screen compiles with no TypeScript errors (expo type-check or tsc --noEmit from apps/mobile)"
+  ],
+  "verification": [
+    "Run: cd z:\\Work\\Kiro\\meeting-transcript-mcp\\apps\\mobile && npx tsc --noEmit — expect no TypeScript errors",
+    "Start the Expo dev server: npm run start --workspace=apps/mobile and open the app. Navigate to Profile tab. Verify: existing keys list loads, generate button works and shows the key once, revoke removes a key from the list."
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented API key management UI in profile.tsx. Clipboard API not available (RN 0.86, no @react-native-clipboard/clipboard installed) — used TextInput with selectTextOnFocus={true} and editable={false} as per spec fallback. The Copy button shows an Alert guiding the user to long-press the key field to select and copy. ScrollView wraps the screen to handle longer key lists. TypeScript check passes with exit 0."
+}
