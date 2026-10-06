@@ -35,7 +35,10 @@ export default function RecordScreen() {
     cancelledRef.current = true;
     xhrRef.current?.abort();
     abortControllerRef.current?.abort();
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
     setUploading(false);
     setUploadProgress(0);
     setUploadStage('');
