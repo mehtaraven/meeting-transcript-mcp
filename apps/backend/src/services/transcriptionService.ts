@@ -30,12 +30,17 @@ export async function transcribeAudio(audioFilePath: string, jobId?: string): Pr
   const mimeType = getMimeType(ext);
 
   let lastError: Error = new Error('Unknown error');
+  // Progress steps: 40 → 70 spread across up to 6 attempts (2 models × 3 attempts each)
+  // Each attempt advances ~5 progress points so the bar visibly moves during retries
+  let attemptIndex = 0;
 
   for (const modelName of MODELS) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`[transcription] Trying ${modelName} attempt ${attempt}/3`);
-        if (jobId) updateJob(jobId, { message: `Transcribing... attempt ${attempt}/3` });
+        const attemptProgress = Math.min(70, 40 + attemptIndex * 5);
+        if (jobId) updateJob(jobId, { progress: attemptProgress, message: `Transcribing... attempt ${attempt}/3` });
+        attemptIndex++;
         const model = genAI.getGenerativeModel({ model: modelName });
         const result = await transcribeWithModel(model, base64Audio, mimeType);
 

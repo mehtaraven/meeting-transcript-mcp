@@ -61,7 +61,7 @@ router.post('/search', authenticateUser, async (req, res, next) => {
 });
 
 /** GET /transcripts/job/:jobId — poll job status */
-router.get('/job/:jobId', async (req, res, next) => {
+router.get('/job/:jobId', authenticateUser, async (req, res, next) => {
   try {
     const job = getJob(req.params.jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });

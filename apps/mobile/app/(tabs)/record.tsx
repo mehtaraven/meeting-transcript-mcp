@@ -165,6 +165,11 @@ export default function RecordScreen() {
           }, 1500);
           pollIntervalRef.current = interval;
           return; // stay in uploading state; poll handler will dismiss
+        } else {
+          // Server responded 2xx but without a jobId — show success anyway
+          Alert.alert('Success', 'Transcript created successfully!');
+          setTitle('');
+          setProjectTags('');
         }
       } else {
         await new Promise<void>((resolve, reject) => {
@@ -226,6 +231,11 @@ export default function RecordScreen() {
                     } catch (_e) { /* ignore poll blips */ }
                   }, 1500);
                   pollIntervalRef.current = interval;
+                } else {
+                  // Server responded 2xx but without a jobId — show success anyway
+                  Alert.alert('Success', 'Transcript created successfully!');
+                  setTitle('');
+                  setProjectTags('');
                 }
               } catch (_e) { /* JSON parse failed, continue */ }
               resolve();
