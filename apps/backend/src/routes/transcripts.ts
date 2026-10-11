@@ -38,19 +38,7 @@ const upload = multer({
   },
 });
 
-// ─── Transcript routes ────────────────────────────────────────────────────────
-
-/** GET /transcripts  — list all */
-router.get('/', authenticateUser, async (req, res, next) => {
-  try {
-    const result = await getTranscripts(
-      req.user!.id,
-      parseInt(req.query.page as string) || 1,
-      parseInt(req.query.page_size as string) || 20
-    );
-    res.json(result);
-  } catch (err) { next(err); }
-});
+// ─── Static-path routes first (must come before /:id to avoid shadowing) ─────
 
 /** GET /transcripts/search  — full-text + date filter */
 router.post('/search', authenticateUser, async (req, res, next) => {
@@ -60,74 +48,14 @@ router.post('/search', authenticateUser, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** GET /transcripts/job/:jobId — poll job status */
-router.get('/job/:jobId', authenticateUser, async (req, res, next) => {
-  try {
-    const job = getJob(req.params.jobId);
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-    res.json(job);
-  } catch (err) { next(err); }
+/** GET /transcripts/job/:jobId — poll transcription job status */
+router.get('/job/:jobId', authenticateUser, async (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
 });
 
-/** GET /transcripts/:id */
-router.get('/:id', authenticateUser, async (req, res, next) => {
-  try {
-    const transcript = await getTranscriptById(req.params.id, req.user!.id);
-    res.json({ transcript });
-  } catch (err) { next(err); }
-});
-
-/** POST /transcripts/upload  — multipart audio upload → transcribe */
-router.post('/upload', authenticateUser, upload.single('audio_file'), async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'audio_file is required' });
-    }
-
-    const jobId = uuidv4();
-    createJob(jobId);
-    updateJob(jobId, { status: 'received', progress: 10, message: 'File received' });
-
-    const tagIds = req.body.tag_ids ? JSON.parse(req.body.tag_ids) : [];
-    const source: 'recording' | 'upload' =
-      req.body.source === 'recording' ? 'recording' : 'upload';
-
-    const transcript = await createTranscript(req.user!.id, {
-      title: req.body.title || `Transcript ${new Date().toLocaleDateString()}`,
-      audioFilePath: req.file.path,
-      audioFileName: req.file.filename,
-      tagIds,
-      source,
-    }, jobId);
-
-    res.status(201).json({ transcript, jobId, message: 'Transcript created successfully' });
-  } catch (err) { next(err); }
-});
-
-/** PUT /transcripts/:id  — update title, summary, tags */
-router.put('/:id', authenticateUser, async (req, res, next) => {
-  try {
-    const { title, summary, tag_ids } = req.body;
-    const transcript = await updateTranscript(req.params.id, req.user!.id, {
-      title,
-      summary,
-      tagIds: tag_ids,
-    });
-    res.json({ transcript, message: 'Transcript updated successfully' });
-  } catch (err) { next(err); }
-});
-
-/** DELETE /transcripts/:id */
-router.delete('/:id', authenticateUser, async (req, res, next) => {
-  try {
-    await deleteTranscript(req.params.id, req.user!.id);
-    res.json({ message: 'Transcript deleted successfully' });
-  } catch (err) { next(err); }
-});
-
-// ─── Tag routes ───────────────────────────────────────────────────────────────
-
-/** GET /transcripts/tags  — list user tags */
+/** GET /transcripts/tags/all  — list user tags */
 router.get('/tags/all', authenticateUser, async (req, res, next) => {
   try {
     const tags = await getUserTags(req.user!.id);
@@ -150,6 +78,77 @@ router.delete('/tags/:id', authenticateUser, async (req, res, next) => {
   try {
     await deleteTag(req.params.id, req.user!.id);
     res.json({ message: 'Tag deleted' });
+  } catch (err) { next(err); }
+});
+
+/** POST /transcripts/upload — multipart audio upload → async transcribe */
+router.post('/upload', authenticateUser, upload.single('audio_file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'audio_file is required' });
+  }
+
+  const jobId = uuidv4();
+  createJob(jobId);
+  updateJob(jobId, { status: 'received', progress: 10, message: 'File received, starting transcription...' });
+
+  const userId = req.user!.id;
+  const tagIds = req.body.tag_ids ? JSON.parse(req.body.tag_ids) : [];
+  const source: 'recording' | 'upload' = req.body.source === 'recording' ? 'recording' : 'upload';
+  const title = req.body.title || `Transcript ${new Date().toLocaleDateString()}`;
+  const filePath = req.file.path;
+  const fileName = req.file.filename;
+
+  // Respond immediately with jobId so the client can start polling
+  res.status(202).json({ jobId, message: 'Transcription started' });
+
+  // Process asynchronously — client polls /job/:jobId for progress
+  createTranscript(userId, { title, audioFilePath: filePath, audioFileName: fileName, tagIds, source }, jobId)
+    .catch((err) => {
+      console.error('[upload] Transcription failed:', err.message);
+      updateJob(jobId, { status: 'failed', progress: 0, message: err.message, error: err.message });
+    });
+});
+
+// ─── Dynamic-param routes (must come after static paths) ─────────────────────
+
+/** GET /transcripts  — list all */
+router.get('/', authenticateUser, async (req, res, next) => {
+  try {
+    const result = await getTranscripts(
+      req.user!.id,
+      parseInt(req.query.page as string) || 1,
+      parseInt(req.query.page_size as string) || 20
+    );
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+/** GET /transcripts/:id */
+router.get('/:id', authenticateUser, async (req, res, next) => {
+  try {
+    const transcript = await getTranscriptById(req.params.id, req.user!.id);
+    res.json({ transcript });
+  } catch (err) { next(err); }
+});
+
+/** PUT /transcripts/:id  — update title, summary, tags */
+router.put('/:id', authenticateUser, async (req, res, next) => {
+  try {
+    const { title, summary, tag_ids } = req.body;
+    const transcript = await updateTranscript(req.params.id, req.user!.id, {
+      title,
+      summary,
+      tagIds: tag_ids,
+    });
+    res.json({ transcript, message: 'Transcript updated successfully' });
+  } catch (err) { next(err); }
+});
+
+/** DELETE /transcripts/:id */
+router.delete('/:id', authenticateUser, async (req, res, next) => {
+  try {
+    await deleteTranscript(req.params.id, req.user!.id);
+    res.json({ message: 'Transcript deleted successfully' });
   } catch (err) { next(err); }
 });
 

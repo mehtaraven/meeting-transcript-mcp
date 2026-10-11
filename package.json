@@ -1,0 +1,26 @@
+{
+  "name": "meeting-transcript-mcp",
+  "version": "1.0.0",
+  "description": "Meeting transcription app with MCP integration for Claude AI",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:mcp": "npm run dev --workspace=apps/mcp-server",
+    "dev:mobile": "npm run start --workspace=apps/mobile",
+    "build": "npm run build --workspaces",
+    "clean": "npm run clean --workspaces && rm -rf node_modules"
+  },
+  "keywords": [
+    "transcription",
+    "mcp",
+    "claude-ai",
+    "react-native",
+    "supabase"
+  ],
+  "author": "",
+  "license": "MIT"
+}
